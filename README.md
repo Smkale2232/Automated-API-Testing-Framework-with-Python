@@ -778,11 +778,11 @@ Expand to microservices testing
 
 ⭐ If this project helped you, please give it a star on GitHub!
 
-📧 Contact: your.email@example.com
+📧 Contact: Smkale2232@gmail.com
 
-🐦 Twitter: @yourhandle
+🐦 Twitter: @Sachink08603797
 
-💼 LinkedIn: Your Profile
+💼 LinkedIn: [Your Profile](https://www.linkedin.com/in/sachin-kale-ab2174236/)
 
 <div align="center">
 🚀 Ready to automate your API testing?
