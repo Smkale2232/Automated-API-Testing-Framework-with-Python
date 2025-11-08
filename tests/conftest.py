@@ -1,58 +1,118 @@
 import pytest
 import requests
-from src.api.app import app as flask_app
-import threading
+import subprocess
 import time
-from config.config import TestingConfig
+import os
+import signal
+from threading import Thread
+
+# Global variable to track the server process
+server_process = None
 
 
-@pytest.fixture(scope='session')
-def app():
-    """Fixture to start Flask app for testing"""
-    config = TestingConfig()
+def start_flask_app():
+    """Start the Flask app in a separate process"""
+    global server_process
+    env = os.environ.copy()
+    env['FLASK_DEBUG'] = 'False'
+    env['FLASK_PORT'] = '5000'
 
-    def run_app():
-        flask_app.run(port=5000, debug=False, use_reloader=False)
+    server_process = subprocess.Popen(
+        [os.sys.executable, 'src/api/app.py'],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
 
-    # Start the app in a separate thread
-    thread = threading.Thread(target=run_app)
-    thread.daemon = True
-    thread.start()
-
-    # Wait for app to start
-    time.sleep(2)
-
-    yield flask_app
+    # Wait for server to start
+    time.sleep(3)
 
 
-@pytest.fixture
-def client(app):
-    """Test client fixture"""
-    return app.test_client()
+def stop_flask_app():
+    """Stop the Flask app process"""
+    global server_process
+    if server_process:
+        server_process.terminate()
+        server_process.wait()
+
+
+def is_server_running():
+    """Check if the server is running"""
+    try:
+        response = requests.get('http://localhost:5000/health', timeout=5)
+        return response.status_code == 200
+    except:
+        return False
+
+
+@pytest.fixture(scope='session', autouse=True)
+def flask_server():
+    """Start and stop Flask server for tests"""
+    # Start server
+    print("Starting Flask server...")
+    start_flask_app()
+
+    # Wait for server to be ready
+    max_attempts = 10
+    for i in range(max_attempts):
+        if is_server_running():
+            print("Flask server is ready!")
+            break
+        print(f"Waiting for server... attempt {i+1}/{max_attempts}")
+        time.sleep(1)
+    else:
+        raise Exception("Flask server failed to start")
+
+    yield
+
+    # Stop server
+    print("Stopping Flask server...")
+    stop_flask_app()
 
 
 @pytest.fixture
 def base_url():
     """Base URL for API requests"""
-    return TestingConfig().API_BASE_URL
+    return 'http://localhost:5000'
 
 
 @pytest.fixture
 def api_client(base_url):
     """API client for making requests"""
     session = requests.Session()
-    session.timeout = TestingConfig().TIMEOUT
+    session.timeout = 10
 
     def _make_request(method, endpoint, **kwargs):
         url = f"{base_url}{endpoint}"
-        return session.request(method, url, **kwargs)
+        print(f"Making {method} request to {url}")
+        response = session.request(method, url, **kwargs)
+        print(f"Response status: {response.status_code}")
+        return response
 
     return _make_request
 
 
+@pytest.fixture
+def unique_user_data():
+    """Generate unique user data for each test"""
+    import time
+    timestamp = int(time.time() * 1000)
+    return {
+        "name": f"Test User {timestamp}",
+        "email": f"test{timestamp}@example.com"
+    }
+
+
 @pytest.fixture(autouse=True)
-def reset_database():
+def reset_database(api_client):
     """Reset the database before each test"""
-    from src.api.app import users_db, user_id_counter
-    users_db.clear()
-    user_id_counter = 1
+    try:
+        # Try to reset the database before each test
+        response = api_client('POST', '/reset')
+        if response.status_code == 200:
+            print("Database reset successfully")
+    except Exception as e:
+        # If reset endpoint doesn't exist or fails, continue with unique data approach
+        print(f"Reset endpoint not available: {e}")
+    yield
