@@ -8,11 +8,18 @@ import os
 import argparse
 import time
 import requests
-from utils.report_generator import HTMLReportGenerator
+
+
+def is_ci_environment():
+    """Check if running in CI environment"""
+    return os.getenv('CI') == 'true'
 
 
 def wait_for_api(base_url, timeout=30):
-    """Wait for API to be ready"""
+    """Wait for API to be ready - only in local environment"""
+    if is_ci_environment():
+        return True  # In CI, we use test client directly
+
     start_time = time.time()
     while time.time() - start_time < timeout:
         try:
@@ -36,22 +43,26 @@ def run_tests(test_type="all", html_report=True):
     env['ENVIRONMENT'] = 'testing'
 
     # Base pytest command
-    cmd = [sys.executable, "-m", "pytest", "-v"]
+    if is_ci_environment():
+        cmd = [sys.executable, "-m", "pytest", "tests/", "-v"]
+    else:
+        cmd = [sys.executable, "-m", "pytest", "-v"]
 
     # Add options based on test type
     if test_type == "unit":
-        cmd.extend(["tests/", "-m", "not integration"])
+        cmd.extend(["-m", "not integration"])
     elif test_type == "integration":
-        cmd.extend(["tests/", "-m", "integration"])
+        cmd.extend(["-m", "integration"])
     elif test_type == "smoke":
-        # Run specific smoke tests
-        cmd.extend([
-            "tests/test_health.py::TestHealthEndpoint::test_health_check_success",
-            "tests/test_health.py::TestHealthEndpoint::test_health_check_method_not_allowed",
-            "tests/test_users.py::TestUserCreation::test_create_user_success"
-        ])
-    else:  # all tests
-        cmd.extend(["tests/"])
+        if is_ci_environment():
+            cmd.extend(["tests/test_health.py",
+                       "tests/test_users.py::TestUserCreation::test_create_user_success"])
+        else:
+            cmd.extend([
+                "tests/test_health.py::TestHealthEndpoint::test_health_check_success",
+                "tests/test_health.py::TestHealthEndpoint::test_health_check_method_not_allowed",
+                "tests/test_users.py::TestUserCreation::test_create_user_success"
+            ])
 
     # Add reporting options
     if html_report:
@@ -61,11 +72,16 @@ def run_tests(test_type="all", html_report=True):
     # Add JUnit XML for CI
     cmd.extend(["--junit-xml=test-reports/junit-report.xml"])
 
+    # Simplify output in CI
+    if is_ci_environment():
+        cmd.extend(["--tb=short", "-p", "no:warnings"])
+
     print(f"Running command: {' '.join(cmd)}")
+    print(f"CI Environment: {is_ci_environment()}")
 
     try:
-        # Wait for API to be ready
-        if not wait_for_api("http://localhost:5000"):
+        # Wait for API to be ready (only in local)
+        if not is_ci_environment() and not wait_for_api("http://localhost:5000"):
             print("❌ Cannot run tests - API is not available")
             return 1
 

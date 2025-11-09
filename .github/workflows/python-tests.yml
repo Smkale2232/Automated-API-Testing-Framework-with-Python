@@ -27,25 +27,18 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Start API Server
+      - name: Run tests with built-in Flask test server
         run: |
-          python src/api/app.py &
-          sleep 5  # Wait for server to start
-          echo "API Server started"
-
-      - name: Check if API is running
-        run: |
-          curl -f http://localhost:5000/health || echo "API not ready yet"
-          sleep 2
-          curl -f http://localhost:5000/health || exit 1
-
-      - name: Run tests with pytest
-        run: |
-          python run_tests.py --type all
+          python -m pytest tests/ -v \
+            --html=test-reports/pytest_report.html \
+            --self-contained-html \
+            --junit-xml=test-reports/junit-report.xml \
+            --tb=short
 
       - name: List test report files
         run: |
-          ls -la test-reports/ || echo "No test-reports directory yet"
+          ls -la test-reports/ || echo "No test-reports directory"
+          find . -name "*.html" -o -name "*.xml" | head -10
 
       - name: Upload test reports
         uses: actions/upload-artifact@v4
